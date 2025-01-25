@@ -32,8 +32,10 @@ export async function POST(req: NextRequest) {
       The user will ask questions or request code to generate charts.
       Return two fields in JSON:
        1. "answer": your direct answer or explanation
-       2. "codeSnippet": a minimal self-contained HTML/JS snippet that can be embedded in the UI
-          to visualize the data in some chart. Keep it short if possible.
+       2. "codeSnippet": a minimal python script that can be embedded in the UI
+          to visualize the data in some chart and when executed will generate the chart. Keep it short if possible.
+
+        If no chart type is specified, use a chart that you feel is most appropriate.
     `;
 
     const userMessage = `
