@@ -6,15 +6,65 @@ import FileUploader from '@/components/FileUploader';
 import GraphRenderer from '@/components/GraphRenderer';
 import Image from 'next/image';
 
+// Add interface for OutputType
+interface OutputType {
+  plot?: string;
+  stats?: string;
+}
+
 export default function HomePage() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [graphCode, setGraphCode] = useState<string>('');
-  const [output, setOutput] = useState<string>('');
+  const [output, setOutput] = useState<OutputType | null>(null);
   const [results, setResults] = useState<any>(null);
+
+  const runCode = async (codeToRun: string) => {
+    try {
+      if (!uploadedFile) {
+        console.error('No file uploaded');
+        return;
+      }
+
+      // Convert file to base64
+      const fileBuffer = await uploadedFile.arrayBuffer();
+      const fileBase64 = Buffer.from(fileBuffer).toString('base64');
+
+      const response = await fetch('/api/run-python', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code: codeToRun,
+          fileName: uploadedFile.name,
+          fileContent: fileBase64
+        }),
+      });
+      
+      const data = await response.json();
+      setResults(data);
+      
+      if (data.output) {
+        try {
+          // Parse the output string into a JavaScript object
+          const outputString = data.output.replace(/'/g, '"');
+          const parsedOutput = JSON.parse(outputString);
+          setOutput(parsedOutput);
+        } catch (error) {
+          console.error('Error parsing output:', error);
+          setOutput(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error running code:', error);
+      setOutput(null);
+    }
+  };
 
   // Handler to receive the code snippet from the chat
   const handleCodeGenerated = (code: string) => {
     setGraphCode(code);
+    runCode(code);  // Automatically run the code when received
   };
 
   // Test function to run complex Python code
@@ -83,10 +133,14 @@ print(result)`;
       
       const data = await response.json();
       setResults(data);
-      setOutput(data.output);
+      
+      // Parse the output string into a JavaScript object
+      const outputString = data.output.replace(/'/g, '"'); // Replace single quotes with double quotes
+      const parsedOutput = JSON.parse(outputString);
+      setOutput(parsedOutput);
     } catch (error) {
       console.error('Error running code:', error);
-      setOutput('Error running code');
+      setOutput(null);
     }
   };
 
@@ -104,9 +158,11 @@ print(result)`;
 
   // Add stats formatting
   const StatsDisplay = ({ stats }: { stats: string }) => {
+    // Replace escaped newlines with actual newline characters
+    const formattedStats = stats.replace(/\\n/g, '\n');
     return (
       <pre className="whitespace-pre-wrap font-mono text-sm">
-        {stats}
+        {formattedStats}
       </pre>
     );
   };
@@ -117,12 +173,12 @@ print(result)`;
       
       {/* Test Button */}
       <div className="flex flex-col items-center gap-4">
-        <button 
+        {/* <button 
           onClick={runHelloWorld}
           className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
         >
           Test Run Python
-        </button>
+        </button> */}
         {output && (
           <div className="space-y-4 w-full">
             {/* Display the plot if available */}
@@ -147,19 +203,19 @@ print(result)`;
       {graphCode && (
         <div className="border border-gray-300 p-4 rounded-md bg-white">
           <h2 className="text-xl font-semibold mb-2">Graph Preview</h2>
-          <GraphRenderer code={graphCode} />
+          <GraphRenderer code={graphCode} uploadedFile={uploadedFile} />
         </div>
       )}
 
       {results && (
         <div className="mt-4 space-y-4">
-          <div>Debug - Raw results:</div>
+          {/* <div>Debug - Raw results:</div>
           <pre className="text-xs overflow-auto max-h-40">
             {JSON.stringify(results, null, 2)}
           </pre>
           
           <div>Debug - Plot data exists: {results.plot ? 'Yes' : 'No'}</div>
-          <div>Debug - Stats exists: {results.stats ? 'Yes' : 'No'}</div>
+          <div>Debug - Stats exists: {results.stats ? 'Yes' : 'No'}</div> */}
           
           {results.plot && (
             <div>

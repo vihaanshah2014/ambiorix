@@ -13,6 +13,7 @@
     "next": "15.1.6",
     "openai": "^4.80.1",
     "papaparse": "^5.5.1",
+    "python-shell": "^5.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-syntax-highlighter": "^15.6.1",
