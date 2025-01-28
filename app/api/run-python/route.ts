@@ -1,142 +1,101 @@
 import { NextResponse } from 'next/server';
-import { PythonShell, Options } from 'python-shell';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import Papa from 'papaparse';
 
 export async function POST(request: Request) {
   let tempDir = '';
   let filePath = '';
 
   try {
-    console.log('Received Python execution request');
     const { code, fileName, fileContent } = await request.json();
-
+    
     if (!fileName || !fileContent) {
-      console.error('Missing required fields');
       return NextResponse.json({ 
         success: false, 
         error: 'Missing file data' 
       }, { status: 400 });
     }
 
-    // Create a temporary directory
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'python-execution-'));
-    console.log('Created temp directory:', tempDir);
-    
-    // Save the uploaded file to the temp directory
+    // Create temp directory and save file
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'data-'));
     filePath = path.join(tempDir, fileName);
     fs.writeFileSync(filePath, Buffer.from(fileContent, 'base64'));
-    console.log('Saved file to:', filePath);
 
-    // Create the Python code with proper structure
-    const pythonCode = `
-import pandas as pd
-import matplotlib.pyplot as plt
-import base64
-import json
-import sys
-from io import BytesIO
-
-def main():
-    try:
-        # Enable detailed error reporting
-        sys.stderr = sys.stdout
-
-        # Execute the user's code with modified CSV reading
-        ${code.replace(
-          /pd\.read_csv\(['"](.*?)['"]\)/g, 
-          "pd.read_csv('$1', encoding='latin-1')"
-        )}
-
-        # Handle plot output
-        if 'plt' in locals():
-            buffer = BytesIO()
-            plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
-            plt.close()
-            buffer.seek(0)
-            plot_data = base64.b64encode(buffer.getvalue()).decode()
-            
-            result = {
-                'plot': plot_data,
-                'success': True
-            }
-        else:
-            result = {
-                'success': True,
-                'message': 'Code executed successfully but no plot was generated'
-            }
-        
-        print(json.dumps(result))
-
-    except Exception as e:
-        import traceback
-        error_result = {
-            'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        }
-        print(json.dumps(error_result))
-
-if __name__ == '__main__':
-    main()
-`;
-
-    // Update the file path in the code
-    const finalCode = pythonCode.replace(
-      new RegExp(`['"]${fileName}['"]`), 
-      `'${filePath.replace(/\\/g, '\\\\')}'`
-    );
-
-    console.log('Executing Python code...');
-    const options: Options = {
-      pythonPath: 'python',
-      pythonOptions: ['-u'], // unbuffered output
-    };
-
-    let result: string[] = await new Promise((resolve, reject) => {
-      PythonShell.runString(finalCode, options, (err: Error | null, output?: string[]) => {
-        // Clean up: delete the temporary file and directory
-        try {
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-          if (fs.existsSync(tempDir)) fs.rmdirSync(tempDir);
-        } catch (cleanupError) {
-          console.error('Error cleaning up:', cleanupError);
-        }
-
-        if (err) {
-          console.error('Python execution error:', err);
-          reject(err);
-          return;
-        }
-        resolve(output || []);
-      });
+    // Read and parse CSV file
+    const fileData = fs.readFileSync(filePath, 'utf-8');
+    const parsedData = Papa.parse(fileData, {
+      header: true,
+      skipEmptyLines: true,
     });
 
-    console.log('Python execution completed');
-    
-    // Parse the Python output as JSON
-    const pythonOutput = result[0] ? JSON.parse(result[0]) : { 
-      success: false, 
-      error: 'No output from Python' 
-    };
-    
-    return NextResponse.json(pythonOutput);
+    // Process the data according to the code instructions
+    // The code will be a simplified DSL (Domain Specific Language) for chart creation
+    const chartConfig = processChartInstructions(code, parsedData.data);
+
+    // Clean up files
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (fs.existsSync(tempDir)) fs.rmdirSync(tempDir);
+    } catch (cleanupError) {
+      console.error('Cleanup error:', cleanupError);
+    }
+
+    return NextResponse.json({
+      success: true,
+      chartConfig
+    });
+
   } catch (error) {
-    console.error('Error executing Python code:', error);
-    
     // Clean up in case of error
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       if (fs.existsSync(tempDir)) fs.rmdirSync(tempDir);
     } catch (cleanupError) {
-      console.error('Error cleaning up:', cleanupError);
+      console.error('Cleanup error:', cleanupError);
     }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: false,
-      error: 'Failed to execute Python code',
+      error: 'Failed to process data',
       details: error instanceof Error ? error.message : String(error)
     }, { status: 500 });
   }
+}
+
+function processChartInstructions(code: string, data: any[]) {
+  // This function will interpret the AI's instructions and convert them
+  // into a Chart.js configuration object
+  const instructions = JSON.parse(code);
+  
+  const config = {
+    type: instructions.chartType || 'bar',
+    data: {
+      labels: data.map(row => row[instructions.xAxis]),
+      datasets: [{
+        label: instructions.yAxis,
+        data: data.map(row => parseFloat(row[instructions.yAxis])),
+        backgroundColor: instructions.color || 'rgba(75, 192, 192, 0.2)',
+        borderColor: instructions.borderColor || 'rgba(75, 192, 192, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true
+        }
+      },
+      plugins: {
+        title: {
+          display: true,
+          text: instructions.title || 'Chart'
+        }
+      }
+    }
+  };
+
+  return config;
 }

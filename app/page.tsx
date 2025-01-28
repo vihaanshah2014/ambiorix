@@ -3,234 +3,119 @@
 import React, { useState } from 'react';
 import Chat from '@/components/Chat';
 import FileUploader from '@/components/FileUploader';
-import GraphRenderer from '@/components/GraphRenderer';
 import Image from 'next/image';
 
-// Add interface for OutputType
-interface OutputType {
+interface ChartOutput {
+  success: boolean;
   plot?: string;
-  stats?: string;
+  error?: string;
+  message?: string;
 }
 
 export default function HomePage() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [graphCode, setGraphCode] = useState<string>('');
-  const [output, setOutput] = useState<OutputType | null>(null);
-  const [results, setResults] = useState<any>(null);
+  const [chartOutput, setChartOutput] = useState<ChartOutput | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const runCode = async (codeToRun: string) => {
+  const handleCodeExecution = async (code: string) => {
+    if (!uploadedFile) {
+      console.error('No file uploaded');
+      return;
+    }
+
     try {
-      if (!uploadedFile) {
-        console.error('No file uploaded');
-        return;
-      }
-
+      console.log('Starting code execution...');
+      setIsLoading(true);
+      
       // Convert file to base64
+      console.log('Converting file to base64...');
       const fileBuffer = await uploadedFile.arrayBuffer();
       const fileBase64 = Buffer.from(fileBuffer).toString('base64');
+      console.log('File converted successfully');
 
+      console.log('Sending request to run-python endpoint...');
       const response = await fetch('/api/run-python', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          code: codeToRun,
+          code,
           fileName: uploadedFile.name,
           fileContent: fileBase64
         }),
       });
       
+      console.log('Received response from run-python endpoint');
       const data = await response.json();
-      setResults(data);
+      console.log('Response data:', data);
       
-      if (data.output) {
-        try {
-          // Parse the output string into a JavaScript object
-          const outputString = data.output.replace(/'/g, '"');
-          const parsedOutput = JSON.parse(outputString);
-          setOutput(parsedOutput);
-        } catch (error) {
-          console.error('Error parsing output:', error);
-          setOutput(null);
-        }
-      }
+      setChartOutput(data);
     } catch (error) {
-      console.error('Error running code:', error);
-      setOutput(null);
-    }
-  };
-
-  // Handler to receive the code snippet from the chat
-  const handleCodeGenerated = (code: string) => {
-    setGraphCode(code);
-    runCode(code);  // Automatically run the code when received
-  };
-
-  // Test function to run complex Python code
-  const runHelloWorld = async () => {
-    try {
-      const complexCode = `
-import numpy as np
-import matplotlib.pyplot as plt
-import base64
-from io import BytesIO
-
-# Generate sample data
-x = np.linspace(-5, 5, 100)
-y1 = np.sin(x)
-y2 = np.cos(x)
-
-# Create a plot
-plt.figure(figsize=(10, 6))
-plt.plot(x, y1, label='sin(x)', color='blue')
-plt.plot(x, y2, label='cos(x)', color='red')
-plt.grid(True)
-plt.title('Trigonometric Functions')
-plt.xlabel('x')
-plt.ylabel('y')
-plt.legend()
-
-# Save plot to a base64 string
-buffer = BytesIO()
-plt.savefig(buffer, format='png')
-plt.close()
-buffer.seek(0)
-plot_data = base64.b64encode(buffer.getvalue()).decode()
-
-# Do some calculations
-mean_sin = np.mean(y1)
-mean_cos = np.mean(y2)
-std_sin = np.std(y1)
-std_cos = np.std(y2)
-
-result = {
-    'plot': plot_data,
-    'stats': f"""
-Statistical Analysis:
--------------------
-Sin(x):
-  Mean: {mean_sin:.4f}
-  Std Dev: {std_sin:.4f}
-  
-Cos(x):
-  Mean: {mean_cos:.4f}
-  Std Dev: {std_cos:.4f}
-"""
-}
-
-print(result)`;
-
-      const response = await fetch('/api/run-python', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          code: complexCode
-        }),
+      console.error('Error executing code:', error);
+      setChartOutput({
+        success: false,
+        error: 'Failed to execute code'
       });
-      
-      const data = await response.json();
-      setResults(data);
-      
-      // Parse the output string into a JavaScript object
-      const outputString = data.output.replace(/'/g, '"'); // Replace single quotes with double quotes
-      const parsedOutput = JSON.parse(outputString);
-      setOutput(parsedOutput);
-    } catch (error) {
-      console.error('Error running code:', error);
-      setOutput(null);
+    } finally {
+      console.log('Code execution completed');
+      setIsLoading(false);
     }
-  };
-
-  // Add proper image display
-  const PlotDisplay = ({ plotData }: { plotData: string }) => {
-    return (
-      <Image 
-        src={`data:image/png;base64,${plotData}`}
-        alt="Statistical plot"
-        width={800}
-        height={600}
-      />
-    );
-  };
-
-  // Add stats formatting
-  const StatsDisplay = ({ stats }: { stats: string }) => {
-    // Replace escaped newlines with actual newline characters
-    const formattedStats = stats.replace(/\\n/g, '\n');
-    return (
-      <pre className="whitespace-pre-wrap font-mono text-sm">
-        {formattedStats}
-      </pre>
-    );
   };
 
   return (
-    <main className="max-w-4xl mx-auto py-10 px-4 space-y-6">
-      <h1 className="text-3xl font-bold text-center">AI Graph Platform</h1>
+    <main className="max-w-4xl mx-auto py-10 px-4 space-y-8">
+      <h1 className="text-3xl font-bold text-center">AI Chart Generator</h1>
       
-      {/* Test Button */}
-      <div className="flex flex-col items-center gap-4">
-        {/* <button 
-          onClick={runHelloWorld}
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-        >
-          Test Run Python
-        </button> */}
-        {output && (
-          <div className="space-y-4 w-full">
-            {/* Display the plot if available */}
-            {output.plot && (
-              <PlotDisplay plotData={output.plot} />
-            )}
-            {/* Display the statistics */}
-            {output.stats && (
-              <StatsDisplay stats={output.stats} />
-            )}
-          </div>
-        )}
-      </div>
-      
-      {/* File Uploader */}
-      <FileUploader onFileSelect={setUploadedFile} />
+      {/* File Upload Section */}
+      <section className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        <FileUploader onFileSelect={setUploadedFile} />
+      </section>
 
-      {/* Chat Area */}
-      <Chat uploadedFile={uploadedFile} onCodeGenerated={handleCodeGenerated} />
+      {/* Chat Interface */}
+      <section className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        <h2 className="text-xl font-semibold mb-4">Chat with AI</h2>
+        <Chat 
+          uploadedFile={uploadedFile} 
+          onCodeGenerated={handleCodeExecution}
+        />
+      </section>
 
-      {/* Graph Preview */}
-      {graphCode && (
-        <div className="border border-gray-300 p-4 rounded-md bg-white">
-          <h2 className="text-xl font-semibold mb-2">Graph Preview</h2>
-          <GraphRenderer code={graphCode} uploadedFile={uploadedFile} />
-        </div>
-      )}
-
-      {results && (
-        <div className="mt-4 space-y-4">
-          {/* <div>Debug - Raw results:</div>
-          <pre className="text-xs overflow-auto max-h-40">
-            {JSON.stringify(results, null, 2)}
-          </pre>
+      {/* Chart Output */}
+      {(isLoading || chartOutput) && (
+        <section className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h2 className="text-xl font-semibold mb-4">Generated Chart</h2>
           
-          <div>Debug - Plot data exists: {results.plot ? 'Yes' : 'No'}</div>
-          <div>Debug - Stats exists: {results.stats ? 'Yes' : 'No'}</div> */}
-          
-          {results.plot && (
-            <div>
-              <div>Plot:</div>
-              <PlotDisplay plotData={results.plot} />
+          {isLoading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
             </div>
           )}
-          
-          {results.stats && (
+
+          {chartOutput && !isLoading && (
             <div>
-              <div>Stats:</div>
-              <StatsDisplay stats={results.stats} />
+              {chartOutput.error ? (
+                <div className="text-red-500 p-4 bg-red-50 rounded">
+                  Error: {chartOutput.error}
+                </div>
+              ) : chartOutput.plot ? (
+                <div className="flex justify-center">
+                  <Image
+                    src={`data:image/png;base64,${chartOutput.plot}`}
+                    alt="Generated chart"
+                    width={800}
+                    height={600}
+                    className="max-w-full h-auto"
+                  />
+                </div>
+              ) : (
+                <div className="text-gray-500 p-4 bg-gray-50 rounded">
+                  {chartOutput.message || 'No chart was generated'}
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </section>
       )}
     </main>
   );

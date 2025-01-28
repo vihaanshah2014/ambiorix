@@ -5,94 +5,110 @@ interface ChatProps {
   onCodeGenerated: (code: string) => void;
 }
 
-interface ChatMessage {
+interface Message {
   role: 'user' | 'assistant';
   content: string;
 }
 
-const Chat: React.FC<ChatProps> = ({ uploadedFile, onCodeGenerated }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputValue, setInputValue] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
+interface ChartConfig {
+  chartType: string;
+  xAxis: string;
+  yAxis: string;
+  title?: string;
+  color?: string;
+  borderColor?: string;
+}
 
-  const handleSend = async (e: FormEvent) => {
+export default function Chat({ uploadedFile, onCodeGenerated }: ChatProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim()) return;
-
-    // Add user message to local state
-    const userMessage: ChatMessage = { role: 'user', content: inputValue };
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue('');
+    if (!input.trim() || !uploadedFile) return;
 
     try {
-      setLoading(true);
+      setIsLoading(true);
+      setMessages(prev => [...prev, { role: 'user', content: input }]);
+      setInput('');
 
-      // Prepare form data for the request
       const formData = new FormData();
-      formData.append('prompt', userMessage.content);
-      if (uploadedFile) {
-        formData.append('file', uploadedFile);
-      }
+      formData.append('prompt', input);
+      formData.append('file', uploadedFile);
 
-      // Call our API route
       const response = await fetch('/api/chat', {
         method: 'POST',
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to get response from API');
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
       }
 
-      const data = await response.json();
-      const assistantMessage: ChatMessage = { role: 'assistant', content: data.answer };
-
-      // Add assistant message
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      // If the API returned `codeSnippet`, pass to onCodeGenerated
-      if (data.codeSnippet) {
-        onCodeGenerated(data.codeSnippet);
+      setMessages(prev => [...prev, { role: 'assistant', content: data.answer }]);
+      
+      if (data.chartConfig) {
+        onCodeGenerated(JSON.stringify(data.chartConfig));
       }
     } catch (error) {
-      console.error(error);
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'Error: Unable to generate response.' },
-      ]);
+      console.error('Chat error:', error);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.'
+      }]);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
     <div className="space-y-4">
-      <div className="max-h-72 overflow-y-auto border border-gray-300 bg-white p-3 rounded-md">
+      {/* Messages Display */}
+      <div className="h-64 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50">
         {messages.map((msg, idx) => (
-          <div key={idx} className={`mb-2 ${msg.role === 'user' ? 'text-blue-600' : 'text-gray-800'}`}>
-            <strong>{msg.role === 'user' ? 'You' : 'AI'}:</strong> {msg.content}
+          <div 
+            key={idx} 
+            className={`mb-3 ${
+              msg.role === 'user' ? 'text-blue-600' : 'text-gray-800'
+            }`}
+          >
+            <span className="font-semibold">
+              {msg.role === 'user' ? 'You: ' : 'AI: '}
+            </span>
+            {msg.content}
           </div>
         ))}
+        {messages.length === 0 && (
+          <div className="text-gray-500 text-center py-8">
+            Start by asking about your data or requesting a specific chart type
+          </div>
+        )}
       </div>
 
-      <form onSubmit={handleSend} className="flex items-center space-x-2">
+      {/* Input Form */}
+      <form onSubmit={handleSubmit} className="flex gap-2">
         <input
-          className="flex-grow border border-gray-300 rounded-md px-3 py-2 text-sm"
-          placeholder="Ask the AI about your file or request a chart..."
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          disabled={loading}
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={uploadedFile 
+            ? "Ask about your data or request a chart..." 
+            : "Please upload a file first"
+          }
+          disabled={!uploadedFile || isLoading}
+          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
           type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded-md disabled:opacity-50"
-          disabled={loading}
+          disabled={!uploadedFile || isLoading}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Loading...' : 'Send'}
+          {isLoading ? 'Thinking...' : 'Send'}
         </button>
       </form>
     </div>
   );
-};
-
-export default Chat;
+}
